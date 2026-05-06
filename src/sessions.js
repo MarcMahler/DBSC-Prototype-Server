@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const SESSION_LIFETIME_MS = 60 * 1000; // 1 minute for testing
+const SESSION_LIFETIME_MS = 60 * 1000 * 3; // 3 minute for testing
 const sessions = new Map();
 
 function createSession(username) {

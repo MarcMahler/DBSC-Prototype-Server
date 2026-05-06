@@ -29,3 +29,21 @@ Observed behavior:
 - Chrome accepts the local certificate as trusted.
 - The authentication cookie is now marked as Secure and HttpOnly.
 - The cookie-based session flow still works as in the HTTP baseline.
+
+## Milestone 3: DBSC endpoint skeletons
+
+Implemented:
+- DBSC session store
+- `/dbsc/register` endpoint
+- `/dbsc/refresh` endpoint
+- challenge generation for refresh requests
+- debug endpoint for inspecting DBSC sessions
+- fallback `X-DBSC-Session-Id` header for manual local testing
+
+Observed behavior:
+- Manual registration creates a DBSC session associated with the current authenticated session.
+- A refresh request with a known DBSC session ID returns `403 Forbidden`.
+- The server includes a challenge in the `Secure-Session-Challenge` response header.
+- The fallback `X-DBSC-Session-Id` header is used only for manual testing, because browser-controlled `Sec-*` headers cannot be set by page JavaScript.
+
+
