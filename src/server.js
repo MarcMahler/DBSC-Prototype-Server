@@ -1,6 +1,9 @@
 const express = require("express");
 const cookieParser = require("cookie-parser");
 
+const https = require("https");  // for https connections with local CA
+const fs = require("fs");
+
 const {
   createSession,
   getSession,
@@ -35,7 +38,7 @@ app.get("/", (req, res) => {
 app.get("/login", (req, res) => {
   res.send(`
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
       <head>
         <title>DBSC Prototype Login</title>
       </head>
@@ -74,7 +77,7 @@ app.post("/login", (req, res) => {
     httpOnly: true,
     sameSite: "Lax",
     maxAge: getSessionLifetimeMs(),
-    // secure: true, // enable later when using HTTPS
+    secure: true, // enable later when using HTTPS
   });
 
   console.log(
@@ -89,7 +92,7 @@ app.post("/login", (req, res) => {
 app.get("/protected", requireAuth, (req, res) => {
   res.send(`
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
       <head>
         <title>Protected Page</title>
       </head>
@@ -130,6 +133,11 @@ app.post("/logout", (req, res) => {
   res.redirect("/login");
 });
 
-app.listen(PORT, () => {
-  console.log(`DBSC prototype server running at http://localhost:${PORT}`);
+const httpsOptions = {
+  key: fs.readFileSync("certs/localhost-key.pem"),
+  cert: fs.readFileSync("certs/localhost.pem"),
+};
+
+https.createServer(httpsOptions, app).listen(PORT, () => {
+  console.log(`DBSC prototype server running at https://localhost:${PORT}`);
 });
