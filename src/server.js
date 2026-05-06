@@ -11,6 +11,14 @@ const {
   getSessionLifetimeMs,
 } = require("./sessions");
 
+const {
+  createDbscSession,
+  getDbscSession,
+  getAllDbscSessions,
+  createChallenge,
+  markRefreshSuccessful,
+} = require("./dbsc");
+
 const app = express();
 const PORT = 3000;
 
@@ -132,6 +140,128 @@ app.post("/logout", (req, res) => {
   res.clearCookie(COOKIE_NAME);
   res.redirect("/login");
 });
+
+// -------------------- DBSC ----------------------------
+
+// DBSC registration endpoint
+app.post("/dbsc/register", (req, res) => {
+  console.log("[DBSC REGISTER] Request received");
+  console.log("[DBSC REGISTER] Headers:", req.headers);
+
+  const sessionId = req.cookies[COOKIE_NAME];
+  const session = getSession(sessionId);
+
+  if (!session) {
+    console.log("[DBSC REGISTER] No valid auth session found");
+    return res.status(401).json({
+      error: "No valid auth session found",
+    });
+  }
+
+  const dbscSession = createDbscSession({
+    userId: session.username,
+    sessionId: session.id,
+    publicKey: null,
+  });
+
+  console.log(
+      `[DBSC REGISTER] Created DBSC session=${dbscSession.id} for user=${session.username}`
+  );
+
+  res.status(200).json({
+    message: "DBSC registration endpoint reached",
+    dbscSessionId: dbscSession.id,
+  });
+});
+
+// DBSC refresh endpoint
+app.post("/dbsc/refresh", (req, res) => {
+  console.log("[DBSC REFRESH] Request received");
+  console.log("[DBSC REFRESH] Headers:", req.headers);
+
+  const dbscSessionId =
+      req.header("Sec-Secure-Session-Id") ||
+      req.header("X-DBSC-Session-Id");
+
+  if (!dbscSessionId) {
+    console.log("[DBSC REFRESH] Missing Sec-Secure-Session-Id header (or X-DBSC-Session-Id header)");
+
+    return res.status(400).json({
+      error: "Missing Sec-Secure-Session-Id header (or X-DBSC-Session-Id header)",
+    });
+  }
+
+  const dbscSession = getDbscSession(dbscSessionId);
+
+  if (!dbscSession) {
+    console.log(`[DBSC REFRESH] Unknown DBSC session=${dbscSessionId}`);
+
+    return res.status(404).json({
+      error: "Unknown DBSC session",
+    });
+  }
+
+  const secureSessionResponse = req.header("Secure-Session-Response");
+
+  if (!secureSessionResponse) {
+    const challenge = createChallenge(dbscSessionId);
+
+    console.log(
+        `[DBSC REFRESH] Challenge issued for DBSC session=${dbscSessionId}`
+    );
+
+    return res
+        .status(403)
+        .set("Secure-Session-Challenge", challenge)
+        .json({
+          message: "Challenge required",
+          dbscSessionId,
+          challenge,
+        });
+  }
+
+  // Placeholder only.
+  // Later, this is where the signature/JWT from Chrome will be verified.
+  console.log("[DBSC REFRESH] Secure-Session-Response received");
+  console.log("[DBSC REFRESH] Signature verification not implemented yet");
+
+  markRefreshSuccessful(dbscSessionId);
+
+  res.status(200).json({
+    message: "Refresh endpoint reached, but signature verification is not implemented yet",
+    dbscSessionId,
+  });
+});
+
+
+// DBSC debug endpoint
+app.get("/debug/dbsc", (req, res) => {
+  const sessions = getAllDbscSessions().map((session) => ({
+    id: session.id,
+    userId: session.userId,
+    sessionId: session.sessionId,
+    hasPublicKey: Boolean(session.publicKey),
+    createdAt: new Date(session.createdAt).toISOString(),
+    lastRefreshAt: session.lastRefreshAt
+        ? new Date(session.lastRefreshAt).toISOString()
+        : null,
+    hasCurrentChallenge: Boolean(session.currentChallenge),
+    challengeExpiresAt: session.challengeExpiresAt
+        ? new Date(session.challengeExpiresAt).toISOString()
+        : null,
+  }));
+
+  res.json({
+    dbscSessionCount: sessions.length,
+    sessions,
+  });
+});
+
+
+// ------------------------------ Server starting code -----------------------------------------------
+
+//
+// with HTTPS and local CA
 
 const httpsOptions = {
   key: fs.readFileSync("certs/localhost-key.pem"),
