@@ -103,6 +103,16 @@ app.get("/protected", requireAuth, (req, res) => {
     <html lang="en">
       <head>
         <title>Protected Page</title>
+        <meta charset="utf-8" />
+        <style>
+          body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; line-height: 1.4; padding: 20px;}
+          pre, code { background: #f6f8fa; border: 1px solid #e5e7eb; border-radius: 4px; }
+          pre { padding: 8px; overflow: auto; }
+          code { padding: 2px 4px; }
+          section { margin-top: 20px; padding-top: 12px; border-top: 1px solid #e5e7eb; }
+          .actions button { margin-right: 8px; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 4px; cursor: pointer; margin-top: 20px; margin-bottom: 20px; background: rgba(129,240,244,0.85); }
+          h4 { margin: 30px 0 10px 0 }
+        </style>
       </head>
       <body>
         <h1>Protected Page</h1>
@@ -110,8 +120,9 @@ app.get("/protected", requireAuth, (req, res) => {
         <p>Hello, <strong>${req.session.username}</strong>.</p>
         <p>This page is only accessible with a valid session cookie.</p>
 
-        <h3>Session information</h3>
-        <pre>${JSON.stringify(
+        <section id="auth">
+          <h2>Session information</h2>
+          <pre>${JSON.stringify(
       {
         sessionId: req.session.id,
         createdAt: new Date(req.session.createdAt).toISOString(),
@@ -120,10 +131,110 @@ app.get("/protected", requireAuth, (req, res) => {
       null,
       2
   )}</pre>
+        </section>
 
-        <form method="POST" action="/logout">
-          <button type="submit">Logout</button>
-        </form>
+        <section id="dbsc">
+          <h2>DBSC</h2>
+          <div>Current DBSC session id: <code id="dbsc-id">—</code></div>
+          <div class="actions">
+            <button id="dbsc-register" type="button">Register</button>
+            <button id="dbsc-refresh" type="button">Refresh</button>
+          </div>
+          <h4>Session Info</h4>
+          <pre id="dbsc-info">—</pre>
+          <h4>Challenge</h4>
+          <pre id="dbsc-challenge">—</pre>
+          <h4>Last Response</h4>
+          <pre id="dbsc-last">—</pre>
+        </section>
+
+        <section id="logout">
+          <form method="POST" action="/logout">
+            <button type="submit">Logout</button>
+          </form>
+        </section>
+
+        <script>
+          (function () {
+            const $ = (id) => document.getElementById(id);
+            const setText = (id, v) => { const el = $(id); if (el) el.textContent = (v == null || v === '') ? '—' : String(v); };
+            const setJSON = (id, obj) => setText(id, obj == null ? '—' : JSON.stringify(obj, null, 2));
+
+            const currentUser = '${req.session.username}';
+            const currentAuthSessionId = '${req.session.id}';
+            let dbscSessionId = localStorage.getItem('dbscSessionId') || null;
+
+            function persist(id) {
+              dbscSessionId = id || null;
+              if (dbscSessionId) localStorage.setItem('dbscSessionId', dbscSessionId);
+              else localStorage.removeItem('dbscSessionId');
+              setText('dbsc-id', dbscSessionId || '—');
+            }
+
+            async function loadStatus() {
+              try {
+                const res = await fetch('/debug/dbsc', { credentials: 'same-origin' });
+                const data = await res.json();
+                const mine = (data.sessions || []).filter(s => s.userId === currentUser || s.sessionId === currentAuthSessionId);
+                let selected = null;
+                if (mine.length) {
+                  selected = mine.find(s => s.id === dbscSessionId) || mine[0];
+                  if (!dbscSessionId || selected.id !== dbscSessionId) persist(selected.id);
+                } else {
+                  persist(null);
+                }
+                setJSON('dbsc-info', selected || { info: 'No DBSC session yet.' });
+              } catch (e) {
+                setJSON('dbsc-info', { error: String(e) });
+              }
+            }
+
+            async function registerDbsc() {
+              setText('dbsc-challenge', '—');
+              setJSON('dbsc-last', { status: 'loading...' });
+              try {
+                const res = await fetch('/dbsc/register', { method: 'POST', credentials: 'same-origin' });
+                const body = await res.json().catch(() => null);
+                setJSON('dbsc-last', { status: res.status, body });
+                if (res.ok && body && body.dbscSessionId) {
+                  persist(body.dbscSessionId);
+                  await loadStatus();
+                }
+              } catch (e) {
+                setJSON('dbsc-last', { error: String(e) });
+              }
+            }
+
+            async function refreshDbsc() {
+              setJSON('dbsc-last', { status: 'loading...' });
+              setText('dbsc-challenge', '—');
+              if (!dbscSessionId) {
+                setJSON('dbsc-last', { error: 'No DBSC session id. Please register first.' });
+                return;
+              }
+              try {
+                const res = await fetch('/dbsc/refresh', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'X-DBSC-Session-Id': dbscSessionId }
+                });
+                const challenge = res.headers.get('Secure-Session-Challenge');
+                if (challenge) setText('dbsc-challenge', challenge);
+                const body = await res.json().catch(() => null);
+                setJSON('dbsc-last', { status: res.status, headers: { 'Secure-Session-Challenge': challenge }, body });
+                if (res.ok) loadStatus();
+              } catch (e) {
+                setJSON('dbsc-last', { error: String(e) });
+              }
+            }
+
+            $('dbsc-register').addEventListener('click', registerDbsc);
+            $('dbsc-refresh').addEventListener('click', refreshDbsc);
+
+            setText('dbsc-id', dbscSessionId || '—');
+            loadStatus();
+          })();
+        </script>
       </body>
     </html>
   `);
