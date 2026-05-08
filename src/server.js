@@ -305,11 +305,34 @@ app.post("/dbsc/register", (req, res) => {
   );
 
   const responseData = {
-    message: "DBSC registration endpoint reached",
-    dbscSessionId: dbscSession.id,
+    session_identifier: dbscSession.id,
+    refresh_url: "/dbsc/refresh",
+    scope: {
+      origin: "https://localhost:3000",
+      include_site: false,
+    },
+    credentials: [
+      {
+        type: "cookie",
+        name: COOKIE_NAME,
+        attributes: "Path=/; Secure; HttpOnly; SameSite=Lax",
+      },
+    ],
   };
 
   console.log("[DBSC REGISTER] Response:", JSON.stringify(responseData, null, 2));
+
+  res.setHeader("Cache-Control", "no-store");
+  
+  // Re-set the auth cookie to match DBSC credentials and ensure it's fresh
+  res.cookie(COOKIE_NAME, session.id, {
+    httpOnly: true,
+    sameSite: "Lax",
+    maxAge: getSessionLifetimeMs(),
+    secure: true,
+    path: "/",
+  });
+
   res.status(200).json(responseData);
 });
 
