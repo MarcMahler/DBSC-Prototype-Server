@@ -1,5 +1,6 @@
 const express = require("express");
 const cookieParser = require("cookie-parser");
+const crypto = require("crypto");
 
 const https = require("https");  // for https connections with local CA
 const fs = require("fs");
@@ -17,6 +18,7 @@ const {
   getAllDbscSessions,
   createChallenge,
   markRefreshSuccessful,
+  verifyDbscJwt,
 } = require("./dbsc");
 
 const app = express();
@@ -92,6 +94,12 @@ app.post("/login", (req, res) => {
       `[LOGIN] user=${username}, session=${session.id}, expiresAt=${new Date(
           session.expiresAt
       ).toISOString()}`
+  );
+  const registrationChallenge = crypto.randomBytes(32).toString("base64url");
+
+  res.setHeader(
+      "Secure-Session-Registration",
+      `(ES256);path="/dbsc/register";challenge="${registrationChallenge}"`
   );
 
   res.redirect("/protected");
@@ -269,20 +277,40 @@ app.post("/dbsc/register", (req, res) => {
     });
   }
 
+  const secureSessionResponse = req.header("Secure-Session-Response");
+  let publicKey = null;
+
+  if (secureSessionResponse) {
+    try {
+      const { verified, publicKey: extractedKey } = verifyDbscJwt(secureSessionResponse);
+      if (verified) {
+        publicKey = extractedKey;
+        console.log("[DBSC REGISTER] Secure-Session-Response verified successfully");
+      } else {
+        console.log("[DBSC REGISTER] Secure-Session-Response verification failed");
+      }
+    } catch (e) {
+      console.error("[DBSC REGISTER] Error verifying Secure-Session-Response:", e.message);
+    }
+  }
+
   const dbscSession = createDbscSession({
     userId: session.username,
     sessionId: session.id,
-    publicKey: null,
+    publicKey: publicKey,
   });
 
   console.log(
       `[DBSC REGISTER] Created DBSC session=${dbscSession.id} for user=${session.username}`
   );
 
-  res.status(200).json({
+  const responseData = {
     message: "DBSC registration endpoint reached",
     dbscSessionId: dbscSession.id,
-  });
+  };
+
+  console.log("[DBSC REGISTER] Response:", JSON.stringify(responseData, null, 2));
+  res.status(200).json(responseData);
 });
 
 // DBSC refresh endpoint
@@ -321,27 +349,47 @@ app.post("/dbsc/refresh", (req, res) => {
         `[DBSC REFRESH] Challenge issued for DBSC session=${dbscSessionId}`
     );
 
+    const responseData = {
+      message: "Challenge required",
+      dbscSessionId,
+      challenge,
+    };
+
+    console.log("[DBSC REFRESH] Response (430):", JSON.stringify(responseData, null, 2));
+
     return res
         .status(403)
         .set("Secure-Session-Challenge", challenge)
-        .json({
-          message: "Challenge required",
-          dbscSessionId,
-          challenge,
-        });
+        .json(responseData);
   }
 
-  // Placeholder only.
-  // Later, this is where the signature/JWT from Chrome will be verified.
   console.log("[DBSC REFRESH] Secure-Session-Response received");
-  console.log("[DBSC REFRESH] Signature verification not implemented yet");
+
+  try {
+    const { verified } = verifyDbscJwt(secureSessionResponse, dbscSession.publicKey);
+    if (!verified) {
+      console.log("[DBSC REFRESH] Signature verification failed");
+      return res.status(401).json({
+        error: "Signature verification failed",
+      });
+    }
+    console.log("[DBSC REFRESH] Signature verified successfully");
+  } catch (e) {
+    console.error("[DBSC REFRESH] Error verifying signature:", e.message);
+    return res.status(400).json({
+      error: "Error verifying signature: " + e.message,
+    });
+  }
 
   markRefreshSuccessful(dbscSessionId);
 
-  res.status(200).json({
-    message: "Refresh endpoint reached, but signature verification is not implemented yet",
+  const responseData = {
+    message: "Refresh successful",
     dbscSessionId,
-  });
+  };
+
+  console.log("[DBSC REFRESH] Response (200):", JSON.stringify(responseData, null, 2));
+  res.status(200).json(responseData);
 });
 
 
