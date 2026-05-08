@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const SESSION_LIFETIME_MS = 60 * 1000 * 3; // 3 minute for testing
+const SESSION_LIFETIME_MS = 60 * 1000 / 6; // 10 sec for testing
 const sessions = new Map();
 
 function createSession(username) {
@@ -24,10 +24,6 @@ function getSession(sessionId) {
   if (!session) {
     return null;
   }
-  if (Date.now() > session.expiresAt) {
-    sessions.delete(sessionId);
-    return null;
-  }
   return session;
 }
 
@@ -41,12 +37,21 @@ function deleteSession(sessionId) {
 function getSessionLifetimeMs() {
   return SESSION_LIFETIME_MS;
 }
+function refreshSession(sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return null;
+  }
+  session.expiresAt = Date.now() + SESSION_LIFETIME_MS;
+  return session;
+}
 
 module.exports = {
   createSession,
   getSession,
   deleteSession,
   getSessionLifetimeMs,
+  refreshSession
 };
 
 

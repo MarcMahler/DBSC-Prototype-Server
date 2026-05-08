@@ -101,7 +101,9 @@ app.post("/login", (req, res) => {
       "Secure-Session-Registration",
       `(ES256);path="/dbsc/register";challenge="${registrationChallenge}"`
   );
-
+  console.log("[LOGIN] Response header:", {
+    "Secure-Session-Registration": `(ES256);path="/dbsc/register";challenge="${registrationChallenge}"`
+  });
   res.redirect("/protected");
 });
 
@@ -265,7 +267,7 @@ app.post("/logout", (req, res) => {
 // DBSC registration endpoint
 app.post("/dbsc/register", (req, res) => {
   console.log("[DBSC REGISTER] Request received");
-  console.log("[DBSC REGISTER] Headers:", req.headers);
+  // console.log("[DBSC REGISTER] Headers:", req.headers);
 
   const sessionId = req.cookies[COOKIE_NAME];
   const session = getSession(sessionId);
@@ -320,8 +322,6 @@ app.post("/dbsc/register", (req, res) => {
     ],
   };
 
-  console.log("[DBSC REGISTER] Response:", JSON.stringify(responseData, null, 2));
-
   res.setHeader("Cache-Control", "no-store");
   
   // Re-set the auth cookie to match DBSC credentials and ensure it's fresh
@@ -331,6 +331,13 @@ app.post("/dbsc/register", (req, res) => {
     maxAge: getSessionLifetimeMs(),
     secure: true,
     path: "/",
+  });
+
+  console.log("[DBSC REGISTER] Response:", {
+    header: {
+      "set-cookie": res.getHeader("set-cookie"),
+    },
+    body: responseData,
   });
 
   res.status(200).json(responseData);
@@ -378,11 +385,19 @@ app.post("/dbsc/refresh", (req, res) => {
       challenge,
     };
 
-    console.log("[DBSC REFRESH] Response (430):", JSON.stringify(responseData, null, 2));
+    console.log("[DBSC REFRESH] Response (403):", {
+      header: {
+        "Secure-Session-Challenge": `"${challenge}";id="${dbscSessionId}"`
+      },
+      body: responseData,
+    });
 
     return res
         .status(403)
-        .set("Secure-Session-Challenge", challenge)
+        .set(
+            "Secure-Session-Challenge",
+            `"${challenge}";id="${dbscSessionId}"`
+        )
         .json(responseData);
   }
 
@@ -411,8 +426,24 @@ app.post("/dbsc/refresh", (req, res) => {
     dbscSessionId,
   };
 
-  console.log("[DBSC REFRESH] Response (200):", JSON.stringify(responseData, null, 2));
-  res.status(200).json(responseData);
+  res.status(200)
+  res.setHeader("Cache-Control", "no-store");
+  res.cookie(COOKIE_NAME, dbscSession.sessionId, {
+    httpOnly: true,
+    sameSite: "Lax",
+    maxAge: getSessionLifetimeMs(),
+    secure: true,
+    path: "/",
+  });
+
+  console.log("[DBSC REFRESH] Response (200):", {
+    header: {
+      "Set-Cookie": res.getHeader("Set-Cookie")
+    },
+    body: responseData,
+  });
+
+  res.end();
 });
 
 

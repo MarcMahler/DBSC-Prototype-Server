@@ -2,6 +2,7 @@
 
 const crypto = require("crypto");
 const dbscSessions = new Map();
+const { refreshSession } = require("./sessions");
 
 function createDbscSession({ userId, sessionId, publicKey = null }) {
   const dbscSessionId = crypto.randomBytes(32).toString("hex");
@@ -57,6 +58,8 @@ function markRefreshSuccessful(dbscSessionId) {
   }
 
   dbscSession.lastRefreshAt = Date.now();
+  refreshSession(dbscSession.sessionId);
+  console.log(`[SESSION RENEWED] session=${dbscSession.sessionId}`);
   dbscSession.currentChallenge = null;
   dbscSession.challengeExpiresAt = null;
 
