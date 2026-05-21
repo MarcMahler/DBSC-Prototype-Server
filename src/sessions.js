@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const logger = require("./logger");
 const SESSION_LIFETIME_MS = 60 * 1000 ; // 5 min
 const sessions = new Map();
 
@@ -13,6 +14,7 @@ function createSession(username) {
   };
 
   sessions.set(sessionId, session);
+  logger.info("SESSION", `Created session=${sessionId} for user=${username}`);
   return session;
 }
 
@@ -32,6 +34,7 @@ function deleteSession(sessionId) {
     return;
   }
   sessions.delete(sessionId);
+  logger.info("SESSION", `Deleted session=${sessionId}`);
 }
 
 function getSessionLifetimeMs() {
@@ -40,9 +43,11 @@ function getSessionLifetimeMs() {
 function refreshSession(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) {
+    logger.warn("SESSION", `Failed to refresh: session=${sessionId} not found`);
     return null;
   }
   session.expiresAt = Date.now() + SESSION_LIFETIME_MS;
+  logger.info("SESSION", `Refreshed session=${sessionId}. New expiry: ${new Date(session.expiresAt).toISOString()}`);
   return session;
 }
 

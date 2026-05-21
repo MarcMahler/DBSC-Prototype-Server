@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const logger = require("./logger");
 const dbscSessions = new Map();
 const {refreshSession} = require("./sessions");
 
@@ -57,7 +58,7 @@ function markRefreshSuccessful(dbscSessionId) {
 
   dbscSession.lastRefreshAt = Date.now();
   refreshSession(dbscSession.sessionId);
-  console.log(`[SESSION RENEWED] session=${dbscSession.sessionId}`);
+  logger.info("DBSC", `Session renewed: session=${dbscSession.sessionId}`);
   dbscSession.currentChallenge = null;
   dbscSession.challengeExpiresAt = null;
 
@@ -70,7 +71,8 @@ function markRefreshSuccessful(dbscSessionId) {
  * @param {Object|null} expectedPublicKey JWK or KeyObject. If null, extracts from JWT header.
  * @returns {Object} { header, payload, verified, publicKey }
  */
-function verifyDbscJwt(jwt, expectedPublicKey = null) {
+function verifyDbscJwt(jwt, dbscSession) {
+  const expectedPublicKey = dbscSession ? dbscSession.publicKey : null;
   const parts = jwt.split(".");
   if (parts.length !== 3) {
     throw new Error("Invalid JWT format");
@@ -140,6 +142,12 @@ function verifyDbscJwt(jwt, expectedPublicKey = null) {
       publicKey,
       signatureToVerify
   );
+
+  // Per DBSC, the payload should contain a 'challenge' claim that matches
+  if (verified && dbscSession && payload.challenge !== undefined && payload.challenge !== dbscSession.currentChallenge) {
+    logger.warn("DBSC", `Challenge mismatch. Expected: ${dbscSession.currentChallenge}, got: ${payload.challenge}`);
+    return { header, payload, verified: false, publicKey: header.jwk };
+  }
 
   return {
     header,

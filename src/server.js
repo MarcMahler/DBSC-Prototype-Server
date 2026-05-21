@@ -4,6 +4,8 @@ const crypto = require("crypto");
 
 const https = require("https");  // for https connections with local CA
 const fs = require("fs");
+const pc = require("picocolors");
+const logger = require("./logger");
 
 const {
   createSession,
@@ -26,8 +28,51 @@ const PORT = 3000;
 
 const COOKIE_NAME = "auth_cookie";
 
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  // Log request
+  logger.info("HTTP", pc.cyan(`--> ${req.method} ${req.url}`));
+  logger.info("HTTP", "Headers:", req.headers);
+  if (req.body && Object.keys(req.body).length > 0) {
+    logger.info("HTTP", "Body:", req.body);
+  }
+
+  // Intercept response body
+  const oldWrite = res.write;
+  const oldEnd = res.end;
+  const chunks = [];
+
+  res.write = (...args) => {
+    chunks.push(Buffer.from(args[0]));
+    return oldWrite.apply(res, args);
+  };
+
+  res.end = (...args) => {
+    if (args[0]) {
+      chunks.push(Buffer.from(args[0]));
+    }
+    const body = Buffer.concat(chunks).toString('utf8');
+    res.body = body;
+    return oldEnd.apply(res, args);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    const statusColor = res.statusCode >= 400 ? pc.red : (res.statusCode >= 300 ? pc.yellow : pc.green);
+    logger.info("HTTP", statusColor(`<-- ${req.method} ${req.url} ${res.statusCode}`) + pc.gray(` - ${duration}ms`));
+    logger.info("HTTP", "Headers:", res.getHeaders());
+    if (res.body) {
+      logger.info("HTTP", "Body:", res.body);
+    }
+  });
+  next();
+});
 
 function requireAuth(req, res, next) {
   const sessionId = req.cookies[COOKIE_NAME];
@@ -90,20 +135,14 @@ app.post("/login", (req, res) => {
     secure: true, // enable later when using HTTPS
   });
 
-  console.log(
-      `[LOGIN] user=${username}, session=${session.id}, expiresAt=${new Date(
-          session.expiresAt
-      ).toISOString()}`
-  );
   const registrationChallenge = crypto.randomBytes(32).toString("base64url");
+  session.registrationChallenge = registrationChallenge;
 
   res.setHeader(
       "Secure-Session-Registration",
       `(ES256);path="/dbsc/register";challenge="${registrationChallenge}"`
   );
-  console.log("[LOGIN] Response header:", {
-    "Secure-Session-Registration": `(ES256);path="/dbsc/register";challenge="${registrationChallenge}"`
-  });
+  logger.info("DBSC", `Registration challenge issued for user=${username}`);
   res.redirect("/protected");
 });
 
@@ -255,7 +294,7 @@ app.post("/logout", (req, res) => {
 
   if (sessionId) {
     deleteSession(sessionId);
-    console.log(`[LOGOUT] session=${sessionId}`);
+    logger.info("AUTH", `Logout: session=${sessionId}`);
   }
 
   res.clearCookie(COOKIE_NAME);
@@ -266,14 +305,11 @@ app.post("/logout", (req, res) => {
 
 // DBSC registration endpoint
 app.post("/dbsc/register", (req, res) => {
-  console.log("[DBSC REGISTER] Request received");
-  // console.log("[DBSC REGISTER] Headers:", req.headers);
-
   const sessionId = req.cookies[COOKIE_NAME];
   const session = getSession(sessionId);
 
   if (!session) {
-    console.log("[DBSC REGISTER] No valid auth session found");
+    logger.warn("DBSC", "Registration failed: No valid auth session found");
     return res.status(401).json({
       error: "No valid auth session found",
     });
@@ -284,16 +320,34 @@ app.post("/dbsc/register", (req, res) => {
 
   if (secureSessionResponse) {
     try {
-      const { verified, publicKey: extractedKey } = verifyDbscJwt(secureSessionResponse);
+      // Mock dbscSession object to provide the registration challenge to verifyDbscJwt
+      const mockDbscSession = {
+        currentChallenge: session.registrationChallenge
+      };
+
+      const { verified, publicKey: extractedKey } = verifyDbscJwt(secureSessionResponse, mockDbscSession);
       if (verified) {
         publicKey = extractedKey;
-        console.log("[DBSC REGISTER] Secure-Session-Response verified successfully");
+        logger.info("DBSC", "Registration Secure-Session-Response verified successfully");
+        // Clear the challenge after successful verification
+        delete session.registrationChallenge;
       } else {
-        console.log("[DBSC REGISTER] Secure-Session-Response verification failed");
+        logger.warn("DBSC", "Registration Secure-Session-Response verification failed (challenge mismatch or signature error)");
+        return res.status(401).json({
+          error: "Registration verification failed",
+        });
       }
     } catch (e) {
-      console.error("[DBSC REGISTER] Error verifying Secure-Session-Response:", e.message);
+      logger.error("DBSC", `Error verifying Registration Secure-Session-Response: ${e.message}`);
+      return res.status(400).json({
+        error: "Error verifying registration: " + e.message,
+      });
     }
+  } else {
+    logger.warn("DBSC", "Registration failed: Missing Secure-Session-Response header");
+    return res.status(400).json({
+      error: "Missing Secure-Session-Response header",
+    });
   }
 
   const dbscSession = createDbscSession({
@@ -302,9 +356,7 @@ app.post("/dbsc/register", (req, res) => {
     publicKey: publicKey,
   });
 
-  console.log(
-      `[DBSC REGISTER] Created DBSC session=${dbscSession.id} for user=${session.username}`
-  );
+  logger.info("DBSC", `Created DBSC session=${dbscSession.id} for user=${session.username}`);
 
   const responseData = {
     session_identifier: dbscSession.id,
@@ -333,27 +385,17 @@ app.post("/dbsc/register", (req, res) => {
     path: "/",
   });
 
-  console.log("[DBSC REGISTER] Response:", {
-    header: {
-      "set-cookie": res.getHeader("set-cookie"),
-    },
-    body: responseData,
-  });
-
   res.status(200).json(responseData);
 });
 
 // DBSC refresh endpoint
 app.post("/dbsc/refresh", (req, res) => {
-  console.log("[DBSC REFRESH] Request received");
-  console.log("[DBSC REFRESH] Headers:", req.headers);
-
   const dbscSessionId =
       req.header("Sec-Secure-Session-Id") ||
       req.header("X-DBSC-Session-Id");
 
   if (!dbscSessionId) {
-    console.log("[DBSC REFRESH] Missing Sec-Secure-Session-Id header (or X-DBSC-Session-Id header)");
+    logger.warn("DBSC", "Refresh failed: Missing Sec-Secure-Session-Id header (or X-DBSC-Session-Id header)");
 
     return res.status(400).json({
       error: "Missing Sec-Secure-Session-Id header (or X-DBSC-Session-Id header)",
@@ -363,7 +405,7 @@ app.post("/dbsc/refresh", (req, res) => {
   const dbscSession = getDbscSession(dbscSessionId);
 
   if (!dbscSession) {
-    console.log(`[DBSC REFRESH] Unknown DBSC session=${dbscSessionId}`);
+    logger.warn("DBSC", `Refresh failed: Unknown DBSC session=${dbscSessionId}`);
 
     return res.status(404).json({
       error: "Unknown DBSC session",
@@ -375,9 +417,7 @@ app.post("/dbsc/refresh", (req, res) => {
   if (!secureSessionResponse) {
     const challenge = createChallenge(dbscSessionId);
 
-    console.log(
-        `[DBSC REFRESH] Challenge issued for DBSC session=${dbscSessionId}`
-    );
+    logger.info("DBSC", `Refresh challenge issued for DBSC session=${dbscSessionId}`);
 
     const responseData = {
       message: "Challenge required",
@@ -385,35 +425,29 @@ app.post("/dbsc/refresh", (req, res) => {
       challenge,
     };
 
-    console.log("[DBSC REFRESH] Response (403):", {
-      header: {
-        "Secure-Session-Challenge": `"${challenge}";id="${dbscSessionId}"`
-      },
-      body: responseData,
-    });
-
     return res
         .status(403)
         .set(
             "Secure-Session-Challenge",
             `"${challenge}";id="${dbscSessionId}"`
         )
+        .set("Cache-Control", "no-store")
         .json(responseData);
   }
 
-  console.log("[DBSC REFRESH] Secure-Session-Response received");
+  logger.info("DBSC", "Secure-Session-Response received");
 
   try {
-    const { verified } = verifyDbscJwt(secureSessionResponse, dbscSession.publicKey);
+    const { verified } = verifyDbscJwt(secureSessionResponse, dbscSession);
     if (!verified) {
-      console.log("[DBSC REFRESH] Signature verification failed");
+      logger.warn("DBSC", "Refresh failed: Signature verification failed");
       return res.status(401).json({
         error: "Signature verification failed",
       });
     }
-    console.log("[DBSC REFRESH] Signature verified successfully");
+    logger.info("DBSC", "Signature verified successfully");
   } catch (e) {
-    console.error("[DBSC REFRESH] Error verifying signature:", e.message);
+    logger.error("DBSC", `Error verifying signature: ${e.message}`);
     return res.status(400).json({
       error: "Error verifying signature: " + e.message,
     });
@@ -434,13 +468,6 @@ app.post("/dbsc/refresh", (req, res) => {
     maxAge: getSessionLifetimeMs(),
     secure: true,
     path: "/",
-  });
-
-  console.log("[DBSC REFRESH] Response (200):", {
-    header: {
-      "Set-Cookie": res.getHeader("Set-Cookie")
-    },
-    body: responseData,
   });
 
   res.end();
@@ -482,5 +509,5 @@ const httpsOptions = {
 };
 
 https.createServer(httpsOptions, app).listen(PORT, () => {
-  console.log(`DBSC prototype server running at https://localhost:${PORT}`);
+  logger.info("SERVER", `DBSC prototype server running at https://localhost:${PORT}`);
 });
