@@ -14,8 +14,10 @@ conventional cookie-based web application.
 
 ### H1 — Ease of Server-Side Integration
 
-**DBSC support can be integrated into a conventional cookie-based server with limited implementation effort, because the
-required changes are mainly confined to adding a registration endpoint, a refresh endpoint, and DBSC-specific session
+**Server sided DBSC support can be integrated into a conventional cookie-based server with limited implementation
+effort, since the
+required modifications are mainly confined to adding a registration endpoint, a refresh endpoint, and DBSC-specific
+session
 state management.**
 
 This hypothesis examines whether DBSC can be introduced as a lightweight extension to existing cookie-based session
@@ -25,31 +27,18 @@ concentrated in DBSC-specific endpoints and session metadata.
 
 ---
 
-### H2 — Client-Side Transparency
+### H2 — User-Transparent Session Renewal
 
-**DBSC can be integrated without application-specific client-side implementation effort, because registration,
-proof-of-possession, and session renewal are handled by the browser rather than by frontend application code.**
+**Using DBSC as a cookie renewal mechanism removes the need for active user involvement during session continuation
+because the renewal process is performed transparently by the browser and server without user interaction.**
 
-This hypothesis examines whether DBSC remains transparent to the application frontend. It is supported if authenticated
-application routes and frontend code do not need to initiate DBSC registration, sign challenges, process DBSC-specific
-headers, or manually renew cookies. It is rejected if the application frontend must implement DBSC-specific JavaScript
-logic to maintain authenticated sessions.
-
+This hypothesis examines whether DBSC can preserve session continuity while keeping the user outside the renewal flow.
+It is supported if short-lived session cookies can be renewed through the DBSC refresh mechanism without user
+interaction or frontend-triggered actions. It is rejected if the user must actively participate in the renewal process,
+for example by re-authenticating, confirming a prompt, or manually triggering session renewal.
 ---
 
-### H3 — Browser-Controlled Protocol Boundary
-
-**DBSC shifts part of session security from application-controlled JavaScript to browser-controlled protocol behavior,
-which improves separation from frontend code but makes debugging and testing more dependent on browser support.**
-
-This hypothesis examines the practical consequences of DBSC being implemented by the browser. It is supported if
-DBSC-specific headers and requests cannot be fully simulated by application JavaScript and if server-side logs or
-browser-specific diagnostics are needed to observe the protocol flow. It is rejected if the DBSC flow can be fully
-controlled and inspected like ordinary frontend-driven HTTP requests.
-
----
-
-### H4 — Deployment Dependency
+### H3 — Deployment Dependency
 
 **The feasibility of DBSC adoption depends not only on server implementation effort, but also on environmental
 requirements such as HTTPS, browser feature support, and device-backed key storage availability.**
@@ -61,7 +50,7 @@ such platform conditions.
 
 ---
 
-### H5 — Preservation of Application-Level Cookie Semantics
+### H4 — Preservation of Application-Level Cookie Semantics
 
 **DBSC changes the renewal and security properties of session cookies without changing their application-level role as
 the indicator of an authenticated session.**
@@ -73,27 +62,14 @@ cookie-based authentication with a different application-level authentication me
 
 ---
 
-### H6 — Separation Between Application Session and DBSC Session State
+### H5 — Separation Between Application Session and DBSC Session State
 
-**A practical DBSC server implementation cannot rely solely on conventional application session storage, but requires
+**A practical DBSC server implementation cannot rely solely on conventional application session storage but requires a
 separate DBSC-specific session state for registration, renewal, and proof-of-possession handling.**
 
 This hypothesis examines whether DBSC can be managed using the same state model as conventional session cookies, or
 whether additional DBSC-specific state must be maintained separately. It is supported if the implementation requires
 distinct tracking of application session identifiers, DBSC session identifiers, public keys, challenges, refresh URLs,
 and cookie renewal metadata. It is rejected if the existing application session store alone is sufficient to support
-registration and renewal without additional DBSC-specific state.
+registration and renewal without an additional DBSC-specific state.
 
-<br><br>
-
-## Evaluation Focus
-
-The prototype evaluation will therefore focus on:
-
-- required server-side changes,
-- session and DBSC state management,
-- renewal and failure handling,
-- effects of cookie lifetime choices,
-- browser-controlled behavior and local secure-context requirements.
-
-These hypotheses will be revisited after implementing and testing the prototype.

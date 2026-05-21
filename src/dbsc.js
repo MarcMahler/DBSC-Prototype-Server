@@ -1,10 +1,8 @@
-
-
 const crypto = require("crypto");
 const dbscSessions = new Map();
-const { refreshSession } = require("./sessions");
+const {refreshSession} = require("./sessions");
 
-function createDbscSession({ userId, sessionId, publicKey = null }) {
+function createDbscSession({userId, sessionId, publicKey = null}) {
   const dbscSessionId = crypto.randomBytes(32).toString("hex");
 
   const dbscSession = {
@@ -68,7 +66,7 @@ function markRefreshSuccessful(dbscSessionId) {
 
 /**
  * Decodes and verifies a DBSC JWT.
- * @param {string} jwt 
+ * @param {string} jwt
  * @param {Object|null} expectedPublicKey JWK or KeyObject. If null, extracts from JWT header.
  * @returns {Object} { header, payload, verified, publicKey }
  */
@@ -137,10 +135,10 @@ function verifyDbscJwt(jwt, expectedPublicKey = null) {
   }
 
   const verified = crypto.verify(
-    null, // Algorithm is determined by the key
-    data,
-    publicKey,
-    signatureToVerify
+      null, // Algorithm is determined by the key
+      data,
+      publicKey,
+      signatureToVerify
   );
 
   return {
