@@ -14,7 +14,6 @@
   "dependencies": {
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
-    "node-fetch": "^3.3.2",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {

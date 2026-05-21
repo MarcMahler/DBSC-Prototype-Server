@@ -460,7 +460,7 @@ app.post("/dbsc/refresh", (req, res) => {
     dbscSessionId,
   };
 
-  res.status(200)
+  res.status(200);
   res.setHeader("Cache-Control", "no-store");
   res.cookie(COOKIE_NAME, dbscSession.sessionId, {
     httpOnly: true,
