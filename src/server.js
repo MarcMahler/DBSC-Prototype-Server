@@ -45,9 +45,9 @@ app.use((req, res, next) => {
   
   // Log request
   logger.info("HTTP", pc.cyan(`--> ${req.method} ${req.url}`));
-  logger.info("HTTP", "Headers:", req.headers);
+  logger.debug("HTTP", "Headers:", req.headers);
   if (req.body && Object.keys(req.body).length > 0) {
-    logger.info("HTTP", "Body:", req.body);
+    logger.debug("HTTP", "Body:", req.body);
   }
 
   // Intercept response body
@@ -72,9 +72,9 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     const statusColor = res.statusCode >= 400 ? pc.red : (res.statusCode >= 300 ? pc.yellow : pc.green);
     logger.info("HTTP", statusColor(`<-- ${req.method} ${req.url} ${res.statusCode}`) + pc.gray(` - ${duration}ms`));
-    logger.info("HTTP", "Headers:", res.getHeaders());
+    logger.debug("HTTP", "Headers:", res.getHeaders());
     if (res.body) {
-      logger.info("HTTP", "Body:", res.body);
+      logger.debug("HTTP", "Body:", res.body);
     }
   });
   next();

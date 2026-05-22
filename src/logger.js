@@ -1,5 +1,21 @@
 const pc = require("picocolors");
 
+const LOG_LEVEL = process.env.LOG_LEVEL || "info";
+const MEASUREMENTS_ENABLED = process.env.MEASUREMENTS_ENABLED === "true";
+
+const levels = {
+    debug: 0,
+    info: 1,
+    warn: 2,
+    error: 3
+};
+
+function shouldLog(level) {
+    const currentLevel = levels[LOG_LEVEL.toLowerCase()] ?? levels.info;
+    const targetLevel = levels[level.toLowerCase()];
+    return targetLevel >= currentLevel;
+}
+
 function formatValue(val) {
     if (typeof val === 'string') {
         try {
@@ -43,8 +59,8 @@ function formatLog(level, module, message, data) {
             msgStr = pc.red(msgStr);
             break;
         case 'DEBUG':
-            levelStr = pc.gray(levelStr);
-            msgStr = pc.gray(msgStr);
+            levelStr = pc.white(levelStr);
+            msgStr = pc.white(msgStr);
             break;
     }
 
@@ -53,17 +69,26 @@ function formatLog(level, module, message, data) {
 
 const logger = {
     info: (module, message, data) => {
-        console.log(formatLog('INFO', module, message, data));
+        if (shouldLog('INFO')) {
+            console.log(formatLog('INFO', module, message, data));
+        }
     },
     error: (module, message, data) => {
-        console.error(formatLog('ERROR', module, message, data));
+        if (shouldLog('ERROR')) {
+            console.error(formatLog('ERROR', module, message, data));
+        }
     },
     warn: (module, message, data) => {
-        console.warn(formatLog('WARN', module, message, data));
+        if (shouldLog('WARN')) {
+            console.warn(formatLog('WARN', module, message, data));
+        }
     },
     debug: (module, message, data) => {
-        console.debug(formatLog('DEBUG', module, message, data));
-    }
+        if (shouldLog('DEBUG')) {
+            console.debug(formatLog('DEBUG', module, message, data));
+        }
+    },
+    MEASUREMENTS_ENABLED
 };
 
 module.exports = logger;
