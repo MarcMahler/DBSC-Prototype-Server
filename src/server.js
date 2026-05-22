@@ -118,6 +118,13 @@ app.get("/login", (req, res) => {
 
           <br><br>
 
+          <label>
+            <input type="checkbox" name="use_dbsc" value="true" checked />
+            Establish DBSC session
+          </label>
+
+          <br><br>
+
           <button type="submit">Login</button>
         </form>
       </body>
@@ -126,7 +133,7 @@ app.get("/login", (req, res) => {
 });
 
 app.post("/login", (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, use_dbsc } = req.body;
 
   if (username !== "alice" || password !== "password") {
     return res.status(401).send("Invalid credentials");
@@ -141,14 +148,19 @@ app.post("/login", (req, res) => {
     secure: true, // enable later when using HTTPS
   });
 
-  const registrationChallenge = crypto.randomBytes(32).toString("base64url");
-  session.registrationChallenge = registrationChallenge;
+  if (use_dbsc === "true") {
+    const registrationChallenge = crypto.randomBytes(32).toString("base64url");
+    session.registrationChallenge = registrationChallenge;
 
-  res.setHeader(
-      "Secure-Session-Registration",
-      `(ES256);path="/dbsc/register";challenge="${registrationChallenge}"`
-  );
-  logger.info("DBSC", `Registration challenge issued for user=${username}`);
+    res.setHeader(
+        "Secure-Session-Registration",
+        `(ES256);path="/dbsc/register";challenge="${registrationChallenge}"`
+    );
+    logger.info("DBSC", `Registration challenge issued for user=${username}`);
+  } else {
+    logger.info("DBSC", `DBSC registration skipped for user=${username} (toggle off)`);
+  }
+
   res.redirect("/protected");
 });
 
