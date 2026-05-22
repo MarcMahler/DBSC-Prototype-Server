@@ -20,8 +20,15 @@ const {
   getAllDbscSessions,
   createChallenge,
   markRefreshSuccessful,
-  verifyDbscJwt,
+  verifyRegistrationResponse,
+  verifyRefreshResponse,
 } = require("./dbsc");
+
+function normalizeStructuredHeaderString(value) {
+  if (!value) return null;
+  // Chrome might send "abc123" or abc123
+  return value.replace(/^"(.*)"$/, '$1');
+}
 
 const app = express();
 const PORT = 3000;
@@ -57,8 +64,7 @@ app.use((req, res, next) => {
     if (args[0]) {
       chunks.push(Buffer.from(args[0]));
     }
-    const body = Buffer.concat(chunks).toString('utf8');
-    res.body = body;
+    res.body = Buffer.concat(chunks).toString('utf8');
     return oldEnd.apply(res, args);
   };
 
@@ -146,6 +152,11 @@ app.post("/login", (req, res) => {
   res.redirect("/protected");
 });
 
+app.get("/randint", requireAuth, (req, res) => {
+  const randomInt = Math.floor(Math.random() * 100) + 1;
+  res.json({ value: randomInt });
+});
+
 app.get("/protected", requireAuth, (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -154,135 +165,100 @@ app.get("/protected", requireAuth, (req, res) => {
         <title>Protected Page</title>
         <meta charset="utf-8" />
         <style>
-          body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; line-height: 1.4; padding: 20px;}
-          pre, code { background: #f6f8fa; border: 1px solid #e5e7eb; border-radius: 4px; }
-          pre { padding: 8px; overflow: auto; }
-          code { padding: 2px 4px; }
-          section { margin-top: 20px; padding-top: 12px; border-top: 1px solid #e5e7eb; }
-          .actions button { margin-right: 8px; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 4px; cursor: pointer; margin-top: 20px; margin-bottom: 20px; background: rgba(129,240,244,0.85); }
-          h4 { margin: 30px 0 10px 0 }
+          body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #333;
+          }
+          .card {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+          }
+          h1 { margin-top: 0; font-weight: 600; font-size: 1.5rem; }
+          .info { text-align: left; margin: 1.5rem 0; font-size: 0.9rem; color: #666; }
+          .info div { margin-bottom: 0.5rem; }
+          .info strong { color: #222; }
+          .number-container {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: #eef2f3;
+            border-radius: 8px;
+            border: 2px solid #d1d9e6;
+          }
+          #random-value {
+            display: block;
+            font-size: 3rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 1rem;
+          }
+          button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            font-size: 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+          }
+          button:hover { background-color: #2980b9; }
+          .logout-form { margin-top: 1.5rem; }
+          .logout-btn { background-color: transparent; color: #e74c3c; font-size: 0.8rem; border: 1px solid #e74c3c; padding: 0.4rem 0.8rem; }
+          .logout-btn:hover { background-color: #fdf2f2; }
         </style>
       </head>
       <body>
-        <h1>Protected Page</h1>
-
-        <p>Hello, <strong>${req.session.username}</strong>.</p>
-        <p>This page is only accessible with a valid session cookie.</p>
-
-        <section id="auth">
-          <h2>Session information</h2>
-          <pre>${JSON.stringify(
-      {
-        sessionId: req.session.id,
-        createdAt: new Date(req.session.createdAt).toISOString(),
-        expiresAt: new Date(req.session.expiresAt).toISOString(),
-      },
-      null,
-      2
-  )}</pre>
-        </section>
-
-        <section id="dbsc">
-          <h2>DBSC</h2>
-          <div>Current DBSC session id: <code id="dbsc-id">—</code></div>
-          <div class="actions">
-            <button id="dbsc-register" type="button">Register</button>
-            <button id="dbsc-refresh" type="button">Refresh</button>
+        <div class="card">
+          <h1>Willkommen</h1>
+          
+          <div class="info">
+            <div>Username: <strong>${req.session.username}</strong></div>
+            <div>Session ID: <strong>${req.session.id}</strong></div>
           </div>
-          <h4>Session Info</h4>
-          <pre id="dbsc-info">—</pre>
-          <h4>Challenge</h4>
-          <pre id="dbsc-challenge">—</pre>
-          <h4>Last Response</h4>
-          <pre id="dbsc-last">—</pre>
-        </section>
 
-        <section id="logout">
-          <form method="POST" action="/logout">
-            <button type="submit">Logout</button>
+          <div class="number-container">
+            <span id="random-value">?</span>
+            <button id="fetch-btn">Random Zahl holen</button>
+          </div>
+
+          <form class="logout-form" method="POST" action="/logout">
+            <button type="submit" class="logout-btn">Abmelden</button>
           </form>
-        </section>
+        </div>
 
         <script>
-          (function () {
-            const $ = (id) => document.getElementById(id);
-            const setText = (id, v) => { const el = $(id); if (el) el.textContent = (v == null || v === '') ? '—' : String(v); };
-            const setJSON = (id, obj) => setText(id, obj == null ? '—' : JSON.stringify(obj, null, 2));
+          const valueEl = document.getElementById('random-value');
+          const btn = document.getElementById('fetch-btn');
 
-            const currentUser = '${req.session.username}';
-            const currentAuthSessionId = '${req.session.id}';
-            let dbscSessionId = localStorage.getItem('dbscSessionId') || null;
-
-            function persist(id) {
-              dbscSessionId = id || null;
-              if (dbscSessionId) localStorage.setItem('dbscSessionId', dbscSessionId);
-              else localStorage.removeItem('dbscSessionId');
-              setText('dbsc-id', dbscSessionId || '—');
+          btn.addEventListener('click', async () => {
+            try {
+              btn.disabled = true;
+              const res = await fetch('/randint');
+              const data = await res.json();
+              
+              valueEl.textContent = data.value;
+              
+              // Visueller Effekt
+              valueEl.style.transform = 'scale(1.2)';
+              setTimeout(() => valueEl.style.transform = 'scale(1)', 150);
+            } catch (err) {
+              console.error('Fetch error:', err);
+              valueEl.textContent = 'Err';
+            } finally {
+              btn.disabled = false;
             }
-
-            async function loadStatus() {
-              try {
-                const res = await fetch('/debug/dbsc', { credentials: 'same-origin' });
-                const data = await res.json();
-                const mine = (data.sessions || []).filter(s => s.userId === currentUser || s.sessionId === currentAuthSessionId);
-                let selected = null;
-                if (mine.length) {
-                  selected = mine.find(s => s.id === dbscSessionId) || mine[0];
-                  if (!dbscSessionId || selected.id !== dbscSessionId) persist(selected.id);
-                } else {
-                  persist(null);
-                }
-                setJSON('dbsc-info', selected || { info: 'No DBSC session yet.' });
-              } catch (e) {
-                setJSON('dbsc-info', { error: String(e) });
-              }
-            }
-
-            async function registerDbsc() {
-              setText('dbsc-challenge', '—');
-              setJSON('dbsc-last', { status: 'loading...' });
-              try {
-                const res = await fetch('/dbsc/register', { method: 'POST', credentials: 'same-origin' });
-                const body = await res.json().catch(() => null);
-                setJSON('dbsc-last', { status: res.status, body });
-                if (res.ok && body && body.dbscSessionId) {
-                  persist(body.dbscSessionId);
-                  await loadStatus();
-                }
-              } catch (e) {
-                setJSON('dbsc-last', { error: String(e) });
-              }
-            }
-
-            async function refreshDbsc() {
-              setJSON('dbsc-last', { status: 'loading...' });
-              setText('dbsc-challenge', '—');
-              if (!dbscSessionId) {
-                setJSON('dbsc-last', { error: 'No DBSC session id. Please register first.' });
-                return;
-              }
-              try {
-                const res = await fetch('/dbsc/refresh', {
-                  method: 'POST',
-                  credentials: 'same-origin',
-                  headers: { 'X-DBSC-Session-Id': dbscSessionId }
-                });
-                const challenge = res.headers.get('Secure-Session-Challenge');
-                if (challenge) setText('dbsc-challenge', challenge);
-                const body = await res.json().catch(() => null);
-                setJSON('dbsc-last', { status: res.status, headers: { 'Secure-Session-Challenge': challenge }, body });
-                if (res.ok) loadStatus();
-              } catch (e) {
-                setJSON('dbsc-last', { error: String(e) });
-              }
-            }
-
-            $('dbsc-register').addEventListener('click', registerDbsc);
-            $('dbsc-refresh').addEventListener('click', refreshDbsc);
-
-            setText('dbsc-id', dbscSessionId || '—');
-            loadStatus();
-          })();
+          });
         </script>
       </body>
     </html>
@@ -319,28 +295,18 @@ app.post("/dbsc/register", (req, res) => {
   let publicKey = null;
 
   if (secureSessionResponse) {
-    try {
-      // Mock dbscSession object to provide the registration challenge to verifyDbscJwt
-      const mockDbscSession = {
-        currentChallenge: session.registrationChallenge
-      };
+    const { verified, publicKey: extractedKey } = verifyRegistrationResponse(
+      secureSessionResponse,
+      session.registrationChallenge
+    );
 
-      const { verified, publicKey: extractedKey } = verifyDbscJwt(secureSessionResponse, mockDbscSession);
-      if (verified) {
-        publicKey = extractedKey;
-        logger.info("DBSC", "Registration Secure-Session-Response verified successfully");
-        // Clear the challenge after successful verification
-        delete session.registrationChallenge;
-      } else {
-        logger.warn("DBSC", "Registration Secure-Session-Response verification failed (challenge mismatch or signature error)");
-        return res.status(401).json({
-          error: "Registration verification failed",
-        });
-      }
-    } catch (e) {
-      logger.error("DBSC", `Error verifying Registration Secure-Session-Response: ${e.message}`);
-      return res.status(400).json({
-        error: "Error verifying registration: " + e.message,
+    if (verified) {
+      publicKey = extractedKey;
+      // Clear the challenge after successful verification
+      delete session.registrationChallenge;
+    } else {
+      return res.status(401).json({
+        error: "Registration verification failed",
       });
     }
   } else {
@@ -364,6 +330,33 @@ app.post("/dbsc/register", (req, res) => {
     scope: {
       origin: "https://localhost:3000",
       include_site: false,
+      scope_specification: [
+        {
+          type: "include",
+          domain: "localhost",
+          path: "/protected"
+        },
+        {
+          type: "exclude",
+          domain: "localhost",
+          path: "/.well-known"
+        },
+        {
+          type: "exclude",
+          domain: "localhost",
+          path: "/debug"
+        },
+        {
+          type: "exclude",
+          domain: "localhost",
+          path: "/dbsc"
+        },
+        // {
+        //   type: "exclude",
+        //   domain: "localhost",
+        //   path: "/refresh"
+        // }
+      ]
     },
     credentials: [
       {
@@ -390,11 +383,11 @@ app.post("/dbsc/register", (req, res) => {
 
 // DBSC refresh endpoint
 app.post("/dbsc/refresh", (req, res) => {
-  const dbscSessionId =
-      req.header("Sec-Secure-Session-Id") ||
-      req.header("X-DBSC-Session-Id");
+  const rawDbscSessionId =
+    req.header("Sec-Secure-Session-Id") ||
+    req.header("X-DBSC-Session-Id");
 
-  if (!dbscSessionId) {
+  if (!rawDbscSessionId) {
     logger.warn("DBSC", "Refresh failed: Missing Sec-Secure-Session-Id header (or X-DBSC-Session-Id header)");
 
     return res.status(400).json({
@@ -402,6 +395,7 @@ app.post("/dbsc/refresh", (req, res) => {
     });
   }
 
+  const dbscSessionId = normalizeStructuredHeaderString(rawDbscSessionId);
   const dbscSession = getDbscSession(dbscSessionId);
 
   if (!dbscSession) {
@@ -417,8 +411,6 @@ app.post("/dbsc/refresh", (req, res) => {
   if (!secureSessionResponse) {
     const challenge = createChallenge(dbscSessionId);
 
-    logger.info("DBSC", `Refresh challenge issued for DBSC session=${dbscSessionId}`);
-
     const responseData = {
       message: "Challenge required",
       dbscSessionId,
@@ -426,39 +418,37 @@ app.post("/dbsc/refresh", (req, res) => {
     };
 
     return res
-        .status(403)
-        .set(
-            "Secure-Session-Challenge",
-            `"${challenge}";id="${dbscSessionId}"`
-        )
-        .set("Cache-Control", "no-store")
-        .json(responseData);
+      .status(403)
+      .set(
+        "Secure-Session-Challenge",
+        `"${challenge}";id="${dbscSessionId}"`
+      )
+      .set("Cache-Control", "no-store")
+      .json(responseData);
   }
 
-  logger.info("DBSC", "Secure-Session-Response received");
+  const verified = verifyRefreshResponse(secureSessionResponse, dbscSession);
+  if (!verified) {
+    // If verification failed (e.g. mismatch, expired, or no active challenge),
+    // issue a new challenge instead of just 401, to allow Chrome to retry.
+    const challenge = createChallenge(dbscSessionId);
+    const responseData = {
+      message: "Challenge required (retry)",
+      dbscSessionId,
+      challenge,
+    };
 
-  try {
-    const { verified } = verifyDbscJwt(secureSessionResponse, dbscSession);
-    if (!verified) {
-      logger.warn("DBSC", "Refresh failed: Signature verification failed");
-      return res.status(401).json({
-        error: "Signature verification failed",
-      });
-    }
-    logger.info("DBSC", "Signature verified successfully");
-  } catch (e) {
-    logger.error("DBSC", `Error verifying signature: ${e.message}`);
-    return res.status(400).json({
-      error: "Error verifying signature: " + e.message,
-    });
+    return res
+      .status(403)
+      .set(
+        "Secure-Session-Challenge",
+        `"${challenge}";id="${dbscSessionId}"`
+      )
+      .set("Cache-Control", "no-store")
+      .json(responseData);
   }
 
   markRefreshSuccessful(dbscSessionId);
-
-  const responseData = {
-    message: "Refresh successful",
-    dbscSessionId,
-  };
 
   res.status(200);
   res.setHeader("Cache-Control", "no-store");
