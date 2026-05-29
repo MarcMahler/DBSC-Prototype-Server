@@ -31,7 +31,7 @@ function normalizeStructuredHeaderString(value) {
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = 3069;
 
 const COOKIE_NAME = "auth_cookie";
 
@@ -340,7 +340,7 @@ app.post("/dbsc/register", (req, res) => {
     session_identifier: dbscSession.id,
     refresh_url: "/dbsc/refresh",
     scope: {
-      origin: "https://localhost:3000",
+      origin: "https://localhost:3069",
       include_site: false,
       scope_specification: [
         {
