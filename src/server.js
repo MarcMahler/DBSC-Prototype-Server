@@ -6,6 +6,7 @@ const https = require("https");  // for https connections with local CA
 const fs = require("fs");
 const pc = require("picocolors");
 const logger = require("./logger");
+const measurement = require("./measurement");
 
 const {
   createSession,
@@ -24,6 +25,11 @@ const {
   verifyRefreshResponse,
 } = require("./dbsc");
 
+measurement.measurePoint("manual_startup_test", {
+  message: "measurement file writing works",
+  pid: process.pid
+});
+
 function normalizeStructuredHeaderString(value) {
   if (!value) return null;
   // Chrome might send "abc123" or abc123
@@ -41,10 +47,23 @@ app.use(cookieParser());
 
 // Request logging middleware
 app.use((req, res, next) => {
+  req.requestId = measurement.newRequestId();
+  res.setHeader("X-Request-Id", req.requestId);
+
   const start = Date.now();
+
+
+  const httpMeasurement = measurement.startMeasurement("http_request_total", {
+    request_id: req.requestId,
+    method: req.method,
+    url: req.originalUrl || req.url
+  });
+
   
   // Log request
-  logger.info("HTTP", pc.cyan(`--> ${req.method} ${req.url}`));
+  logger.info("HTTP", pc.cyan(`--> ${req.method} ${req.url}`), {
+    request_id: req.requestId
+  });
   logger.debug("HTTP", "Headers:", req.headers);
   if (req.body && Object.keys(req.body).length > 0) {
     logger.debug("HTTP", "Body:", req.body);
@@ -71,11 +90,15 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     const statusColor = res.statusCode >= 400 ? pc.red : (res.statusCode >= 300 ? pc.yellow : pc.green);
-    logger.info("HTTP", statusColor(`<-- ${req.method} ${req.url} ${res.statusCode}`) + pc.gray(` - ${duration}ms`));
+    logger.info("HTTP", statusColor(`<-- ${req.method} ${req.url} ${res.statusCode}`) + pc.gray(` - ${duration}ms`), {request_id: req.requestId});
     logger.debug("HTTP", "Headers:", res.getHeaders());
     if (res.body) {
       logger.debug("HTTP", "Body:", res.body);
     }
+    measurement.endMeasurement(httpMeasurement, {
+      status: res.statusCode,
+      result: res.statusCode >= 400 ? "error" : "success"
+    });
   });
   next();
 });
@@ -512,4 +535,7 @@ const httpsOptions = {
 
 https.createServer(httpsOptions, app).listen(PORT, () => {
   logger.info("SERVER", `DBSC prototype server running at https://localhost:${PORT}`);
+  logger.info("MAIN", "Measurements enabled? use dev:m", {
+    'env.MEASUREMENTS_ENABLED': process.env.MEASUREMENTS_ENABLED ? 'true' : 'false'
+  });
 });

@@ -1,6 +1,6 @@
 const pc = require("picocolors");
 
-const LOG_LEVEL = process.env.LOG_LEVEL || "info";
+const LOG_LEVEL = process.env.LOG_LEVEL || "none";
 const MEASUREMENTS_ENABLED = process.env.MEASUREMENTS_ENABLED === "true";
 
 const levels = {
