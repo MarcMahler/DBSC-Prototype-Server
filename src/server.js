@@ -53,11 +53,11 @@ app.use((req, res, next) => {
   const start = Date.now();
 
 
-  const httpMeasurement = measurement.startMeasurement("http_request_total", {
+  /*const httpMeasurement = measurement.startMeasurement("http_request_total", {
     request_id: req.requestId,
     method: req.method,
     url: req.originalUrl || req.url
-  });
+  });*/
 
   
   // Log request
@@ -95,10 +95,10 @@ app.use((req, res, next) => {
     if (res.body) {
       logger.debug("HTTP", "Body:", res.body);
     }
-    measurement.endMeasurement(httpMeasurement, {
+    /*measurement.endMeasurement(httpMeasurement, {
       status: res.statusCode,
       result: res.statusCode >= 400 ? "error" : "success"
-    });
+    });*/
   });
   next();
 });
@@ -155,7 +155,11 @@ app.get("/login", (req, res) => {
   `);
 });
 
+let LoginMeasurementId;
 app.post("/login", (req, res) => {
+
+  LoginMeasurementId = measurement.startMeasurement('login + dbsc /register',{})
+
   const { username, password, use_dbsc } = req.body;
 
   if (username !== "alice" || password !== "password") {
@@ -168,7 +172,7 @@ app.post("/login", (req, res) => {
     httpOnly: true,
     sameSite: "Lax",
     maxAge: getSessionLifetimeMs(),
-    secure: true, // enable later when using HTTPS
+    secure: true,
   });
 
   if (use_dbsc === "true") {
@@ -187,9 +191,11 @@ app.post("/login", (req, res) => {
   res.redirect("/protected");
 });
 
+let increaseValue = 7;
 app.get("/randint", requireAuth, (req, res) => {
-  const randomInt = Math.floor(Math.random() * 100) + 1;
-  res.json({ value: randomInt });
+  /*const randomInt = Math.floor(Math.random() * 100) + 1;*/
+  increaseValue++
+  res.json({ value: increaseValue });
 });
 
 app.get("/protected", requireAuth, (req, res) => {
@@ -414,6 +420,7 @@ app.post("/dbsc/register", (req, res) => {
   });
 
   res.status(200).json(responseData);
+  measurement.endMeasurement(LoginMeasurementId)
 });
 
 // DBSC refresh endpoint
