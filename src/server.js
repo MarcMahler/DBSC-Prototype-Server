@@ -155,10 +155,7 @@ app.get("/login", (req, res) => {
   `);
 });
 
-let LoginMeasurementId;
 app.post("/login", (req, res) => {
-
-  LoginMeasurementId = measurement.startMeasurement('login + dbsc /register',{})
 
   const { username, password, use_dbsc } = req.body;
 
@@ -420,7 +417,6 @@ app.post("/dbsc/register", (req, res) => {
   });
 
   res.status(200).json(responseData);
-  measurement.endMeasurement(LoginMeasurementId)
 });
 
 // DBSC refresh endpoint
