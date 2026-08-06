@@ -24,6 +24,7 @@ const {
   verifyRegistrationResponse,
   verifyRefreshResponse,
 } = require("./dbsc");
+const {startMeasurement, endMeasurement} = require("./measurement");
 
 measurement.measurePoint("manual_startup_test", {
   message: "measurement file writing works",
@@ -53,10 +54,10 @@ app.use((req, res, next) => {
   const start = Date.now();
 
 
-  /*const httpMeasurement = measurement.startMeasurement("http_request_total", {
+ /* const httpMeasurement = measurement.startMeasurement("http_request_total", {
+    url: req.originalUrl || req.url,
     request_id: req.requestId,
     method: req.method,
-    url: req.originalUrl || req.url
   });*/
 
   
@@ -95,7 +96,7 @@ app.use((req, res, next) => {
     if (res.body) {
       logger.debug("HTTP", "Body:", res.body);
     }
-    /*measurement.endMeasurement(httpMeasurement, {
+   /* measurement.endMeasurement(httpMeasurement, {
       status: res.statusCode,
       result: res.statusCode >= 400 ? "error" : "success"
     });*/
@@ -154,9 +155,9 @@ app.get("/login", (req, res) => {
     </html>
   `);
 });
-
+let marcID = 0;
 app.post("/login", (req, res) => {
-
+  marcID = startMeasurement("login_reg_dbsc",{})
   const { username, password, use_dbsc } = req.body;
 
   if (username !== "alice" || password !== "password") {
@@ -301,6 +302,7 @@ app.get("/protected", requireAuth, (req, res) => {
       </body>
     </html>
   `);
+
 });
 
 app.post("/logout", (req, res) => {
@@ -417,6 +419,7 @@ app.post("/dbsc/register", (req, res) => {
   });
 
   res.status(200).json(responseData);
+  endMeasurement(marcID)
 });
 
 // DBSC refresh endpoint
@@ -427,7 +430,6 @@ app.post("/dbsc/refresh", (req, res) => {
 
   if (!rawDbscSessionId) {
     logger.warn("DBSC", "Refresh failed: Missing Sec-Secure-Session-Id header (or X-DBSC-Session-Id header)");
-
     return res.status(400).json({
       error: "Missing Sec-Secure-Session-Id header (or X-DBSC-Session-Id header)",
     });
@@ -438,7 +440,6 @@ app.post("/dbsc/refresh", (req, res) => {
 
   if (!dbscSession) {
     logger.warn("DBSC", `Refresh failed: Unknown DBSC session=${dbscSessionId}`);
-
     return res.status(404).json({
       error: "Unknown DBSC session",
     });
